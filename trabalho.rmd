@@ -1,0 +1,561 @@
+---
+title: "Trabalho em Grupo de Analytic Tools"
+author:
+- Marcelo Leopoldo e Silva de Carvalho Filho - RM342876
+subtitle: Como montar um time de futebol usando Advanced Analytics
+output:
+  html_notebook:
+    toc: yes
+    toc_float: yes
+    fig_width: 10
+  pdf_document:
+    toc: yes
+---
+![](https://storage.googleapis.com/ds-publico/imgs/Fiap-logo-novo.jpg){ width=20% }
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, error=TRUE, warning=FALSE)
+rm(list = ls())
+```
+
+
+
+# 1 - Entendimento do problema
+
+
+
+A nossa empresa e seus investidores decidiram montar um time de futebol na Europa com a mesma qualidade dos melhores times europeus da atualidade. Para isso, solicitaram uma análise da equipe de BI sobre quais jogadores poderiam adquirir, desde que tivessem um preço competitivo. Devemos contratar 11 jogadores titulares para as seguintes posições:
+
+|Posição|Descrição|Jogadores|
+|---|---|---|
+|GK|Goleiro|1
+|Center-back|Zagueiro central|2
+|Outside-back|Zagueiro lateral|2
+|Center-mid|Meio de campo|2
+|Outside-mid|Lateral|2
+|Forward|Atacante|2
+
+As posições detalhadas podem ser encontradas na figura a seguir:  
+  
+![](https://storage.googleapis.com/ds-publico/imgs/posicoes.PNG){ width=50% } 
+ 
+
+
+## 1.1 Fonte das informações
+
+Como não é possível medir todos os jogadores do mundo a partir de agora, o novo time considerou aceitável usar a base de dados com 17994 jogadores (originários do jogo Fifa 18).
+
+- As informações básicas dos jogadores estão no arquivo Excel: 
+  - https://storage.googleapis.com/ds-publico/Fifa/jogadores.xlsx
+- As habilidades dos jogadores foram catalogadas na base de dados:
+  - Servidor (host): 35.225.23.89
+  - Tipo de Banco de dados: PostgreSQL (pacote RPostgres)
+  - Porta (port): 55432
+  - Database (db): fiapbi
+  - Usuário (user): biuser
+  - Senha (password): biuser
+  - Schema e Tabela: futebol.habilities
+- As características físicas dos jogadores estão no mesmo banco de dados, porém em outra tabela:
+  - Schema e Tabela: futebol.body
+- Os dados financeiros dos jogadores estão no arquivo CSV encontrado em:
+  - https://storage.googleapis.com/ds-publico/Fifa/financial.csv 
+
+
+![](https://storage.googleapis.com/ds-publico/imgs/fifa18-logo.jpg){ width=100% }
+
+## 1.2 Dicionário de dados
+
+- Informações dos jogadores:  
+ID, name, full_name, club, club_logo, special, league, flag, nationality, photo, Position.  
+
+- Habilidades do jogador (numéricos):  
+crossing, finishing, heading_accuracy, short_passing, volleys, dribbling, curve, free_kick_accuracy, long_passing, ball_control, acceleration, sprint_speed, agility, reactions, balance, shot_power, jumping, stamina, strength, long_shots, aggression, interceptions, positioning, vision, penalties, composure, marking, standing_tackle, sliding_tackle, gk_diving, gk_handling, gk_kicking, gk_positioning, gk_reflexes. 
+
+- Características físicas:  
+Numéricos: age, height_cm, weight_kg.   
+Categóricos: birth_date, body_type.   
+Booleano: real_face  
+
+- Dados financeiros (numéricos):  
+eur_value, eur_wage, eur_release_clause  
+
+-----
+
+# 2 - Preparativos para a análise (Setup)
+
+
+Para iniciarmos a análise é preciso instalar e carregar alguns pacotes. Esta seção é considerada um cabeçalho e evolui conforme a análise acontece.
+
+Obs.: Caso sua estação não possua algum dos pacotes, é necessário instalar antes!
+```{r message=FALSE, warning=FALSE}
+library(DBI) #Interface para base de dados
+library(RPostgres) #Conexão com base de dados
+library(readr) #Leitura de arquivo CSV
+library(openxlsx) # Leitura de arquivo Excel
+library(dplyr) #Manipulação de dados
+library(plotly) #Gráficos Interativos
+library(randomForest) #Aprendizado estatístico Advanced Analytics
+library(magrittr)
+```
+
+
+A seguir, serão criadas algumas funções auxiliares que serão utilizadas em diversos trechos de análise.
+```{r}
+#O professor criou a função abaixo para dar o display de um gráfico do plotly sempre com o mesmo tamanho
+display.graph <- function(mygraph, width = 800, height = 500, margin = 0){
+  ret <- mygraph %>% 
+    layout(autosize = F, width = width, height = height, margin = margin) %>%
+    config(showLink = F)
+  return ( ret )
+}
+```
+
+
+# 3 - Obtenção de dados
+
+A seguir temos exemplos de obtenção de dados de arquivo csv, arquivo Excel e banco de dados. Utilize seu conhecimento para obter as informações requeridas indicadas na seção 1:
+
+- Informações dos jogadores
+- Habilidades do jogador
+- Características físicas
+- Dados financeiros
+
+## 3.1 Exemplos:
+```{r}
+# Exemplo Excel
+exemplo.cameras <- read.xlsx("https://storage.googleapis.com/ds-publico/cameras.baltimore.xlsx")
+
+# Exemplo CSV
+exemplo.copas <- read_csv(url("https://storage.googleapis.com/ds-publico/Copas.csv"))
+# Exemplo DB
+con <- dbConnect(Postgres(), host="35.225.23.89", port=55432,
+                 db="fiapbi", user="biuser", password="biuser")
+
+exemplo.starwars <- dbGetQuery(con, "SELECT * FROM public.starwars")
+exemplo.school_persons <- dbGetQuery(con, "SELECT * FROM reports.school_persons")
+dbDisconnect(con)
+rm(con)
+```
+
+## 3.2 Obtenção dos dados
+
+Insira na célula a seguir os passos para obtenção dos dados mencionados.
+Lembre-se de armazenar em variáveis com nomes apropriados.
+```{r}
+## COLOQUE SUA RESPOSTA AQUI
+players = read.xlsx("https://storage.googleapis.com/ds-publico/Fifa/jogadores.xlsx")
+
+con = dbConnect(Postgres(), host="35.225.23.89", port=55432, db="fiapbi", user="biuser", password="biuser")
+
+habilities = dbGetQuery(con, "SELECT * FROM futebol.habilities")
+physical  = dbGetQuery(con, "SELECT * FROM futebol.body")
+
+dbDisconnect(con)
+rm(con)
+
+finances = read_csv("https://storage.googleapis.com/ds-publico/Fifa/financial.csv")
+```
+
+## 3.3 Juntar todos os dados em **fifa**
+Para facilitar todas as análises a seguir, crie uma tabela chamada `fifa`, com o "join" de todas as tabelas (use `inner_join`)
+```{r}
+## COLOQUE SUA RESPOSTA AQUI
+fifa = players %>% 
+       inner_join(habilities,by="ID") %>% 
+       inner_join(physical, by="ID") %>%
+       inner_join(finances, by="ID")
+```
+
+## 3.4 Validações:
+
+```{r message=FALSE, warning=FALSE}
+if(!'fifa' %in% ls()){
+  print("Querido aluno, a tabela 'fifa' precisa existir!")
+} else {
+  print("Parece que está certo, vamos seguir!")
+}
+```
+
+
+# 4 - Análise exploratória inicial
+
+## 4.1	Conhecimento inicial dos dados
+
+Todo processamento deve se iniciar de uma análise exploratória, ou seja, conhecer os dados que temos disponíveis.
+
+Para isso, vamos usar alguns conceitos de estatística descritiva.
+
+Os códigos a seguir exibem informações sobre uma tabela chamada `mtcars`, entre estes dados:  
+- Quantidade de linhas e colunas;  
+- Resumos estatísticos das colunas;  
+- Primeiros registros da tabela.  
+```{r message=FALSE, warning=FALSE}
+dim(mtcars)
+summary(mtcars)
+head(mtcars)
+```
+
+Use o exemplo acima e informe :
+
+```{r}
+dim(fifa)
+summary(fifa)
+```
+
+- Qual a quantidade de jogadores no arquivo de jogadores: 17994
+
+- Qual o salário médio dos jogadores, em Euro: 11504
+
+
+
+
+## 4.2 Ligas disponíveis e ligas de referência
+
+O exemplo abaixo exibe quantas espécies diferentes temos na tabela `exemplo.starwars`
+```{r}
+length( unique(exemplo.starwars$species) )
+```
+
+Baseado nisso, quantos Clubes e quantas ligas temos disponíveis:
+
+```{r}
+length(unique(fifa$club))
+length(unique(fifa$league))
+```
+
+- Clubes: 648
+- Ligas:  42
+
+
+Quantos jogadores temos em cada liga? Use o exemplo abaixo para responder.
+```{r}
+exemplo.starwars %>%
+  group_by(species) %>%
+  summarise(Personagens = n()) %>%
+  arrange(desc(Personagens))
+```
+
+Reposta:
+```{r}
+fifa %>%
+  group_by(league) %>%
+  summarise(players = n()) %>%
+  arrange(desc(players))
+```
+
+
+## 4.3 Liga de referência! (as melhores, segundo o prefessor) !
+Nossa base de dados possui 647 times divididos em 41 ligas. As seguintes ligas serão selecionadas como as melhores ligas para análise dos jogadores:  
+- English Championship  
+- French Ligue 1  
+- German Bundesliga  
+- Spanish Primera División  
+- Italian Serie A (ok, sei que há controvérsias)  
+
+Para faciliar nosso trabalho futuro, armazenamos as ligas de referência selecionadas no vetor `best_leagues`:
+```{r}
+best_leagues = c("English Championship", "French Ligue 1", "German Bundesliga", "Spanish Primera División", "Italian Serie A")
+best_species = c("Droid", "Mirialan")
+```
+
+Agora exiba um gráfico nos informando quantos jogadores estão na liga de referência. Veja o exemplo abaixo que exibe quantos personages estão nas espécies de referência:
+```{r}
+exemplo.starwars %>%
+  group_by(species) %>%
+  summarise(Personagens = n()) %>%
+  arrange(desc(Personagens)) %>%
+  mutate( Referencia = species %in% best_species) -> exemplo.agregacao
+print(exemplo.agregacao)
+```
+
+```{r}
+## COLOQUE SUA RESPOSTA AQUI
+n_players_by_league = fifa %>%
+  group_by(league) %>%
+  summarise(players = n()) %>%
+  arrange(desc(players)) %>%
+  mutate(reference = league %in% best_leagues) %T>%
+  print()
+```
+
+
+## 4.4 Gráfico de barras
+Exiba o gráfico de barras de todas as ligas, destacando as que são ligas de referência. Use o exemplo abaixo: 
+```{r warning=FALSE, out.width="100%"}
+grafico <- exemplo.agregacao %>%
+  filter(Referencia == F) %>%
+  plot_ly(x = ~species, y = ~Personagens, color = ~Referencia, type = 'bar', name="Outras")
+grafico <- grafico %>% add_bars(x = ~species, y = ~Personagens, color = ~Referencia, data = exemplo.agregacao[exemplo.agregacao$Referencia==T,], name="Best")
+
+
+display.graph(grafico)
+```
+
+Minhas ligas, se tudo der certo, um gráfico como este deve ser exibido:
+![](https://storage.googleapis.com/ds-publico/Fifa/BestLeagues.png)
+
+
+```{r warning=FALSE, out.width="100%"}
+n_players_by_league %>%
+  filter(reference == FALSE) %>%
+  plot_ly(x = ~league, y = ~players, color = ~reference, type = 'bar', name = 'other') %>%
+  add_bars(x = ~league, y = ~players, color = ~reference, data = filter(n_players_by_league, reference == TRUE), name = "best") %T>% display.graph()
+```
+
+
+# 5 - Análise Características físicas dos jogadores
+
+Será que há diferenças físicas entre jogadores das ligas diferentes?
+Veja o exemplo a seguir:
+```{r}
+par(mfrow=c(2,1))
+exemplo.school_persons %>%
+  filter(gender=="men") %>%
+  .$earnings %>%
+  hist(xlim=c(0, 300), main="Homens")
+exemplo.school_persons %>%
+  filter(gender=="women") %>%
+  .$earnings %>%
+  hist(xlim=c(0, 300), main="Mulheres")
+par(mfrow=c(1,1))
+```
+Agora mostre a distribuição de altura dos ATACANTES ( `Forward`) das melhores ligas acima e das demais ligas abaixo.
+```{r message=FALSE, warning=FALSE}
+par(mfrow=c(2,1))
+forwards = filter(fifa, Position == "Forward")
+forwards %>% filter(not(league %in% best_leagues)) %>% .$height_cm %>% hist(main = "other", xlim=c(150, 210), breaks = 20)
+forwards %>% filter(league %in% best_leagues) %>% .$height_cm %>% hist(main = "best", xlim=c(150, 210), breaks= 20)
+par(mfrow=c(1,1))
+```
+Exemplo de uma imagem esperada:
+![](https://storage.googleapis.com/ds-publico/Fifa/AlturaPorTopLeague.png)
+
+
+
+## 5.2 EXTRA! Exemplo de análises mais detalhadas.
+ 
+```{r message=FALSE, warning=FALSE}
+if(!'fifa' %in% ls()){
+  fifa <- read_csv("https://storage.googleapis.com/ds-publico/fifa%20game-3.csv",
+                   locale = locale(encoding = "UTF-8"))
+}
+fifa <- fifa %>%
+  mutate(Selected = league %in% best_leagues)
+
+analise_posicao <- function(coluna, nome_col){
+  fig <- fifa %>% plot_ly(type = 'violin') 
+  
+  fig <- fig %>%
+    add_trace(
+      x = ~Position[fifa$Selected == T],
+      y = ~coluna[fifa$Selected == T],
+      legendgroup = 'Top',
+      scalegroup = 'Top',
+      name = 'Top',
+      side = 'negative',
+      box = list( visible = T ),
+      meanline = list( visible = T ),
+      color = I("blue")
+    ) 
+  fig <- fig %>%
+    add_trace(
+      x = ~Position[fifa$Selected == F],
+      y = ~coluna[fifa$Selected == F],
+      legendgroup = 'Outras',
+      scalegroup = 'Outras',
+      name = 'Outras',
+      side = 'positive',
+      box = list( visible = T ),
+      meanline = list( visible = T ),
+      color = I("#449944")
+    ) 
+  
+  fig <- fig %>%
+    layout(
+      xaxis = list( title = "Posição" ),
+      yaxis = list( title = nome_col, zeroline = F ),
+      violingap = 0,
+      violingroupgap = 0,
+      violinmode = 'overlay'
+    )
+  
+  return(display.graph(fig))
+}
+analise_posicao(fifa$age, "Idade")
+analise_posicao(fifa$height_cm, "Altura (cm)")
+analise_posicao(fifa$weight_kg, "Peso (kg)")
+analise_posicao(fifa$eur_value, "Valor de compra(EUR)")
+analise_posicao(fifa$eur_wage, "Salário (EUR)")
+```
+
+E então podemos fazer as análises sobre essas características. Nas figuras podemos ver que os jogadores das ligas selecionadas são mais novos do que das demais ligas, independentes da posição enquanto que os jogadores das ligas não selecionadas tem um salário menor, independentemente da posição. O interessante dessas análises é que é possível ver a estatística descritiva de uma forma muito mais natural, incluindo médias, medianas, quartis, máximos e mínimos, além de uma curva de distribuição.  
+
+Como o objetivo é mostrar o poder da ferramenta, de forma não exaustiva, vou parar a análise exploratória por aqui. Percebam que com poucas linhas de código, conseguimos gerar gráficos interativos totalmente customizadas. Agora, deixarei as demais análises exploratórias para vocês e partir para a proposta de resolução do problema: Escolher nossos 11 jogadores, bons e baratos!
+
+
+# 6 - Proposta de resolução do problema
+
+Para resolver este problema, vamos tentar obter o preço justo do jogador (eur_value), baseado apenas em suas habilidades, identificadas no dicionário de dados.  
+
+Se estivéssemos olhando apenas uma habilidade, como dribbling, para atacantes, por exemplo, poderíamos traçar uma média, de acordo com essa habilidade, correto? Neste caso, poderíamos traçar um gráfico como este, presente na a seguir, em que cada ponto azul representa um atacante, e cada ponto laranja o salário médio dos atacantes que possuem a mesma nota de dribbling.
+
+```{r message=FALSE, warning=FALSE}
+# CELULA APENAS PARA DEMONSTRACAO
+
+#Obtém jogadores de referência e armazena em j_ref
+j_ref <- fifa %>%
+  filter(Position == "Forward") %>%
+  filter(league %in% best_leagues)
+
+# Obtem a media destes jogadores, POR dribbling e armazena em vlmedio
+vlmedio <- j_ref %>%
+  group_by(dribbling) %>%
+  summarise(eur_value = mean(eur_value, na.rm = TRUE)) %>%
+  mutate(descricao = paste("Média de dribbling ", dribbling) ) %>%
+  select(dribbling, descricao, eur_value)
+  
+#Cria gráfico dos jogadores
+fig <- plot_ly(j_ref, x = ~dribbling, y = ~eur_value,
+               text=~full_name, type='scatter', mode='markers',
+               name="Jogadores")
+
+# Adiciona as médias
+fig <- add_trace(fig, data=vlmedio,
+                 x = ~dribbling, y = ~eur_value,
+                 type='scatter', mode='markers', text= ~ paste("Media de", dribbling),
+                 name="Médias" )
+
+display.graph(fig)
+```
+
+Mas como fazer isso considerando mais do que uma habilidade? E se quisermos considerar todas as habilidades para definir o preço justo do jogador?  
+
+Sim, isso não apenas é possível como existem muitas técnicas possíveis para se chegar a este resultado. É preciso de um pouco de conhecimento estatístico ou de aprendizado de máquina, mas utilizar uma ferramenta como o R é o que diferencia grandes análises, podendo ultrapassar as análises dos simples relatórios explicativos.  
+
+Para este caso, vou usar um algoritmo de Breiman e Cutler chamado de Random Forest para Regressão. Trata-se de um modelo de aprendizado estatístico que avalia as diversas características (habilidades do jogador) e estabelece qual seria a resposta do modelo (valor do jogador).  
+
+## 6.1.	Modelo ATACANTES usando Random Forest
+
+O código a seguir, separa em um vetor chamado “habilidades”, qual seriam as variáveis importantes para o modelo.  
+
+```{r}
+habilidades <- c("crossing", "finishing", "heading_accuracy", "short_passing", "volleys", "dribbling",  "curve", "free_kick_accuracy", "long_passing",  "ball_control", "acceleration", "sprint_speed",  "agility", "reactions", "balance",  "shot_power", "jumping", "stamina",  "strength", "long_shots", "aggression",  "interceptions", "positioning", "vision",  "penalties", "composure", "marking",  "standing_tackle", "sliding_tackle", "gk_diving",  "gk_handling", "gk_kicking", "gk_positioning",  "gk_reflexes")
+
+```
+
+Então, inicialmente fazemos o modelo estatístico para identificar os atacantes que tem os valores mais divergentes de acordo com usas habilidades. O trecho de código a seguir, faz justamente isso, ou seja, de acordo com suas habilidades identifica qual seria o valor justo para os **atacantes**.    
+
+## 6.1.1 - Prepara dados 
+Filtra apenas jogadores de referência e armazena em referencia.df
+```{r}
+position = "Forward"
+referencia.df <- fifa %>%
+  filter(league %in% best_leagues) %>%
+  filter(Position == position) %>%
+  select(Position, eur_value, habilidades)
+#Remove casos que estejam incompletos
+referencia.df <- referencia.df[complete.cases(referencia.df), ]
+```
+
+# 6.1.2 - Cria o modelo estatistico
+Cria modelo usando RandomForest e armazena em referencia.rf
+
+```{r}
+referencia.rf <- randomForest( eur_value~., data=referencia.df)
+```
+
+```{r}
+fifa %>%
+  filter(!league %in% best_leagues) %>%
+  filter(Position == position) %>%
+  mutate(valor_justo = predict(referencia.rf, .),
+         diferenca = eur_value - valor_justo) %>%
+  select(ID, name, club, league, eur_value, valor_justo, diferenca) -> analise.atacantes
+```
+
+
+E para ter uma visão gráfica desta diferença entre valor de mercado e valor justo, temos o código a seguir que gera a figura. Nesta imagem, identificamos que o jogador "Z.Ibrahimovic" custa cerca de 18 milhões de euros a menos do que suas habilidades dizem que ele vale, logo, seria uma ótima aquisição para o clube.  
+```{r message=FALSE, warning=FALSE}
+plot_ly() -> fig
+fig <- fig %>%
+  add_trace(data = analise.atacantes, x= ~eur_value, y= ~valor_justo,
+            text=~paste(name, "\nValor Merc:", sprintf("%.2f",eur_value),
+                        "\nValor Justo:", sprintf("%.2f",valor_justo),
+                        "\nDiferença:", sprintf("%.2f",diferenca)),
+            name="Jogadores",
+            type='scatter', mode='markers') %>%
+  add_segments(x = 0, xend = 1e8, y = 0, yend = 1e8, name="Equilíbrio")
+display.graph(fig)
+```
+```{r message=FALSE, warning=FALSE}
+# função auxiliar para exercicios 6.2 e 6.3
+
+
+create_fair_value_model = . %>% 
+  filter(league %in% best_leagues) %>%
+  select(Position, eur_value, all_of(habilidades)) %>%
+  (function (x) { x[complete.cases(x), ] }) %>%
+  randomForest(eur_value~., data=.)
+
+create_prediction_dt = function (data, rf) {
+  data %>%
+    filter(!league %in% best_leagues) %>%
+    mutate(fair_value = predict(rf, .), gap = eur_value - fair_value) %>%
+    select(ID, name, club, league, eur_value, fair_value, gap)
+}
+
+predict_fair_value = function (data, ...) {
+  players = data %>% filter(Position %in% c(...))
+  players.random_forest = players %>% create_fair_value_model
+  players.prediction = create_prediction_dt(players,
+                                            players.random_forest)
+  players.prediction
+}
+
+plot_advanced_analytics = function (data, ...) {
+  players.prediction = predict_fair_value(data, ...)
+  plot_ly() -> fig
+  fig <- fig %>%
+  add_trace(data = players.prediction, x= ~eur_value, y= ~fair_value,
+            text=~paste(name, "\nValor Merc:", sprintf("%.2f",eur_value),
+                        "\nValor Justo:", sprintf("%.2f",fair_value),
+                        "\nDiferença:", sprintf("%.2f",gap)),
+            name="Jogadores",
+            type='scatter', mode='markers') %>%
+  add_segments(x = 0, xend = 1e8, y = 0, yend = 1e8, name="Equilíbrio")
+  display.graph(fig)
+}
+```
+## 6.2.	Faça um modelo de Advanced Analytics para Meio Campistas
+
+```{r}
+plot_advanced_analytics(fifa, "Outside-mid", "Center-mid")
+```
+
+## 6.3.	Faça um modelo de Advanced Analytics para Zaqueiros Centrais
+
+```{r}
+plot_advanced_analytics(fifa, "Outside-back", "Center-back")
+```
+
+
+
+# 7 - Conclusão
+
+Espaço para a conclusão
+
+```{r}
+f = predict_fair_value(fifa, "Forward")
+m = predict_fair_value(fifa, "Outside-mid", "Center-mid")
+b = predict_fair_value(fifa, "Outside-back", "Center-back")
+f[order(f$gap), c("name", "gap", "club")]
+m[order(m$gap), c("name", "gap", "club")]
+b[order(b$gap), c("name", "gap", "club")]
+```
+
+Diga quais dois **Atacantes** poderiam ser adquiridos pelo clube e comente o motivo: Z. Ibrahimovic, Jonas
+
+Diga quais dois **Meio Campistas** poderiam ser adquiridos pelo clube e comente o motivo:	A. Witsel, Adrien Silva
+
+
+Diga quais dois **Zaqueiros Centrais** poderiam ser adquiridos pelo clube e comente o motivo: P. Mertesacker, D. Srna
+
